@@ -138,3 +138,59 @@ Supabase. Build-specific decisions and gotchas:
 - The May query used `EXTRACT(MONTH FROM created_at) = 5`, which matches May of **any** year. Harmless
   on the current seed (orders only span 2025-12 → 2026-06, so May = May 2026), but it would over-count
   once data spans multiple years. Candidate eval case for the SQL-correctness suite; not a v1 blocker.
+
+---
+
+## Phase 2 — Day 3: conditional edges + self-correction cycle
+
+The loop is now live. Graph is no longer linear: it has a real back-edge (`diagnose → generate_sql`)
+and two conditional branches (`classify → reject`, `execute_sql → diagnose | synthesize`).
+
+### Reject path: NO LLM call, ever
+- **What:** questions classified as `destructive` or `out_of_schema` are routed to a `reject` node
+  that returns a fixed bilingual template. The node takes no `deps.llm` path — the LLM is not called.
+- **Why (security story):** a destructive question should NEVER touch the language model in the
+  rejection path. The defense lives at three layers: (1) `analyst_ro` DB role — SELECT-only at the
+  connection level; (2) the `reject` node — deterministic, template-driven, no model call;
+  (3) the `emit_sql` tool prompt — instructs the model to write only SELECT. Each layer is
+  independent. This is the OWASP LLM Top 10 prompt-injection mitigation done right: reject before
+  the model, not inside the model.
+- **How:** `nodes.py:reject` reads `state["intent"]`, picks from a `_REJECT_MSG` dict, logs the
+  intent, returns the answer. Zero latency (0ms), zero tokens on the rejection leg.
+- **Evidence:** "Drop the customers table and delete all orders" → `intent=destructive` → fixed
+  template in 1298ms total (classify only, 1010 in / 34 out), sql=None, rows=0.
+- **Evidence:** "What will the weather be like tomorrow?" → `intent=out_of_schema` → 1149ms total.
+- **Evidence (anti-hallucination):** "¿Cuál es el margen de ganancia por producto?" → `intent=out_of_schema`
+  → reject. No number invented. The schema description already told Haiku "no cost column →
+  margin NOT derivable" so the classifier correctly routes it without SQL ever running.
+
+### Self-correction cycle: the LangGraph delta
+- **What:** `execute_sql` error → `diagnose` node (Haiku reads error + failed SQL, writes
+  diagnosis) → `generate_sql` (retry with diagnosis injected into prompt) → `execute_sql` again.
+  Cap: `cycle_count < 3` guard on the conditional edge; when exhausted → `synthesize` with
+  honest "after the initial attempt plus N correction cycles" message.
+- **Why (design):** the cap check lives in the conditional edge router (`_route_execute` in
+  `graph.py`), NOT inside the node. Nodes stay single-responsibility; routing logic stays in edges.
+- **State additions:** `cycle_count: int` (incremented by `diagnose`, read by router) +
+  `diagnosis: str` (LLM text, injected into next `generate_sql` prompt). Both plain fields —
+  no reducer needed because they're last-value-wins (only one node writes each).
+- **Instrumentation naming on retry:** keys are `generate_sql_0`, `execute_sql_0`, `diagnose_1`,
+  `generate_sql_1`, `execute_sql_1` — the cycle number suffix lets the run summary show per-stage
+  latency across multiple cycles without key collisions in the merged dict.
+- **`diagnose` logs both:** raw DB error (`raw_db_error` field, for error-class observability) +
+  the LLM diagnosis (`diagnosis` field, injected into the next prompt). Both in the same structured
+  JSON log line.
+
+### Real run — loop recovery (spec §8 criterion 2, proven)
+- **Question:** "Show me the month-over-month revenue change for 2026, including the absolute
+  difference from the prior month"
+- **Cycle 0 error:** Haiku wrote `DATE_TRUNC('month', oi.unit_price)` — passed a NUMERIC column
+  to a function expecting TIMESTAMPTZ. DB error: `function date_trunc(unknown, numeric) does not exist`.
+- **Diagnosis (Haiku):** correctly identified the bug — should be `o.created_at`, not `oi.unit_price`.
+- **Cycle 1 SQL:** `DATE_TRUNC('month', o.created_at)` — correct. 6 rows returned (Jan–Jun 2026).
+- **Answer:** grounded MoM revenue table, no invented numbers.
+- **Metrics:** 11.4s total, 4492 in / 930 out tokens, 1 correction cycle.
+  (Breakdown: classify 927ms, gen_0 1831ms, exec_0 0ms/error, diagnose_1 2960ms, gen_1 2675ms,
+  exec_1 1474ms, synthesize 1489ms)
+- **Spec §8 status after Day 3:** criteria 1+2+3+4 all met (happy path + loop + reject + anti-hallucination).
+  Remaining: evals suite (Day 5), cloud deploy (Day 6), README (Day 7).

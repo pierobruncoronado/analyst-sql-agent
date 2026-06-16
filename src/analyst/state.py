@@ -19,7 +19,7 @@ def _merge(left: dict, right: dict) -> dict:
 
 
 class GraphState(TypedDict, total=False):
-    """State threaded through the linear graph (one cycle later, in v2)."""
+    """State threaded through the graph, including the self-correction cycle."""
 
     question: str
     intent: str
@@ -28,6 +28,8 @@ class GraphState(TypedDict, total=False):
     rows: list[tuple]
     answer: str
     error: str | None
+    cycle_count: int      # incremented by diagnose; guards the 3-cycle cap
+    diagnosis: str        # LLM explanation of what went wrong; injected into next generate_sql
     latency_ms: Annotated[dict[str, float], _merge]
     tokens: Annotated[dict[str, dict[str, int]], _merge]
 

@@ -62,19 +62,56 @@ reject branches yet (those are next session). "Minimal and RUNNING before the lo
 7. [x] Real runs shown (ES count + EN top-N JOIN), both grounded on real data. `ruff` clean.
        Meets spec §8 first criterion. DECISIONS + PROGRESO updated; committed + pushed.
 
-## Phase 2 — Day 3 (next session): the self-correction LOOP + security
-Goal: add the conditional/cyclic edges — the thing the project exists to demonstrate.
-START HERE:
-1. [ ] Conditional edge on `intent`: `out_of_schema` / `destructive` → reject branch (honest
-       message, no SQL run). This activates the classifier that's currently log-only.
-2. [ ] Self-correction cycle: `execute_sql` error → `diagnose` node → back to `generate_sql`,
-       capped at 3 cycles. Track cycle count + error text in state. This is the LangGraph delta.
-3. [ ] Security layer (defense beyond the RO role): validate generated SQL stays within the 4
-       tables + is a single SELECT (reject DDL/DML/multi-statement) before execution.
-4. [ ] Anti-hallucination: prove the "no cost column → margin not derivable" path returns an honest
-       "can't compute" instead of inventing numbers.
-5. [ ] Demonstrate the loop recovering from at least one real SQL error (spec §8 criterion 2).
+## Phase 2 — Day 3: the self-correction LOOP + security (DONE)
+Goal: conditional/cyclic edges — the thing the project exists to demonstrate.
 
-### Carry-over note for the loop session
-- Latent gotcha to turn into an eval case: `generate_sql` produced `EXTRACT(MONTH FROM created_at)=5`
-  with no year filter (fine on current seed, wrong across years). See DECISIONS Day-2 build.
+### Done — Day 3
+1. [x] Conditional edge on `intent`: `out_of_schema` / `destructive` → `reject` node (fixed
+       bilingual template, ZERO LLM calls on the rejection path). Destructive + out-of-schema
+       both proven.
+2. [x] Self-correction cycle: `execute_sql` error → `diagnose` (Haiku reads error + failed SQL)
+       → `generate_sql` (retries with diagnosis injected) → cap at 3 cycles via conditional edge.
+       `cycle_count` + `diagnosis` added to state.
+3. [x] Security: reject node is the deterministic gate (no model call). DB role is the connection
+       layer. Prompt instructs SELECT-only. Three-layer defense in depth documented.
+4. [x] Anti-hallucination: "¿Cuál es el margen de ganancia?" → `out_of_schema` → honest decline,
+       no numbers invented. (Classifier picks it up; schema description includes "no cost column".)
+5. [x] Loop recovery demonstrated with real DB error: `date_trunc(unknown, numeric)` on cycle 0 →
+       Haiku diagnosis → corrected SQL on cycle 1 → 6-row MoM revenue result. (spec §8 criterion 2 ✅)
+
+### Spec §8 status (after Day 3)
+- [x] Pregunta real → respuesta correcta end-to-end (Day 2)
+- [x] Loop recovers from at least one real SQL error (Day 3, proven above)
+- [x] Rejects destructive + out-of-schema (Day 3)
+- [x] No inventa números (Day 3, margen example)
+- [ ] Suite de evals corrida (Day 5)
+- [ ] Cloud deploy (Day 6)
+- [ ] README reproducible (Day 7)
+
+### Carry-over eval cases (Day 5)
+- Month-only filter `EXTRACT(MONTH ...)=5` ignores year → candidate golden-set case.
+- MoM revenue with window-over-aggregate → cycle-1 correction pattern → include as "loop" eval.
+
+---
+
+## Phase 2 — Day 4 (next session): FastAPI layer + UI scaffold
+Goal: wrap the graph in a FastAPI endpoint so the agent is callable over HTTP (prerequisite for
+cloud deploy and for the minimal UI).
+START HERE:
+1. [ ] `src/analyst/api.py`: FastAPI app with one `POST /ask` endpoint — receives JSON `{"question": "..."}`,
+       runs the graph, returns `{"answer": "...", "intent": "...", "cycles": N, "latency_ms": {...}, "tokens": {...}}`.
+       Fail-closed on empty question (422). Structured JSON logs preserved.
+2. [ ] Run `uvicorn analyst.api:app` locally; curl-test happy path + destructive rejection.
+3. [ ] `Dockerfile` (single-stage, Python slim, non-root user, `CMD ["uvicorn", ...]`).
+4. [ ] `docker build + docker run` locally — verify the endpoint responds.
+5. [ ] Push to Railway (the account is already activated). Verify the public URL responds.
+       (This closes spec §8 criterion 6: "deployed in cloud, answers with laptop off.")
+6. [ ] Minimal UI (if time): single HTML page or React input → result display, wired to the Railway URL.
+       Recortar alcance si el timebox aprieta — la API es lo que importa para §8.
+
+### Notes for Day 4
+- Keep the graph import and `build_graph` call at startup (not per-request) so the compiled graph
+  is reused across requests.
+- Rate limit per session and input truncation can go here (spec §4 "anti-abuso").
+- The `DATABASE_URL_RO` and `ANTHROPIC_API_KEY` go as Railway environment variables — NOT in the
+  deployed image. Verify `.gitignore` before push.

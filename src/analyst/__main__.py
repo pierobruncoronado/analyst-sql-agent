@@ -29,7 +29,13 @@ def main() -> int:
     deps = Deps(cfg=cfg, llm=LLM(cfg))
     graph = build_graph(deps)
 
-    final = graph.invoke({"question": question, "latency_ms": {}, "tokens": {}})
+    final = graph.invoke({
+        "question": question,
+        "cycle_count": 0,
+        "diagnosis": "",
+        "latency_ms": {},
+        "tokens": {},
+    })
 
     latency = final.get("latency_ms", {})
     tokens = final.get("tokens", {})
@@ -39,11 +45,12 @@ def main() -> int:
     print("\n--- ANSWER ---")
     print(final.get("answer", "(no answer)"))
     print("\n--- RUN SUMMARY ---")
-    print(f"intent:   {final.get('intent')}")
-    print(f"sql:      {final.get('sql')}")
-    print(f"rows:     {len(final.get('rows', []))}")
-    print(f"latency:  {latency}  total={round(sum(latency.values()), 1)} ms")
-    print(f"tokens:   in={total_in} out={total_out}  by_stage={tokens}")
+    print(f"intent:        {final.get('intent')}")
+    print(f"cycles:        {final.get('cycle_count', 0)}")
+    print(f"sql:           {final.get('sql')}")
+    print(f"rows:          {len(final.get('rows', []))}")
+    print(f"latency:       {latency}  total={round(sum(latency.values()), 1)} ms")
+    print(f"tokens:        in={total_in} out={total_out}  by_stage={tokens}")
     return 0
 
 
