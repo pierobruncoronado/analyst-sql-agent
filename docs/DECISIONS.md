@@ -95,3 +95,46 @@ Three decisions were locked before coding:
 - **Why:** these are execution concerns (runaway-query protection), cheap, and independent of the
   reject branches. They are NOT the security layer — schema validation + destructive rejection are
   still deferred to the security session.
+
+---
+
+## Phase 2 — Day 2: graph BUILD (happy path running end-to-end)
+
+The three decisions above were implemented. The linear graph runs end-to-end against
+Supabase. Build-specific decisions and gotchas:
+
+### Project is now an installable package (hatchling, src layout)
+- **What:** dropped `package = false`; added `[build-system]` (hatchling) + `[project.scripts]`
+  so `uv run python -m analyst "<q>"` works and `analyst` is importable.
+- **Why:** `python -m analyst` needs the project installed into the venv; the CLI is the run surface.
+- **How:** `[tool.hatch.build.targets.wheel] packages = ["src/analyst"]`; `uv sync` installs it editable.
+
+### State instrumentation uses a merge reducer
+- **What:** `latency_ms` and `tokens` are `Annotated[dict, _merge]` in the TypedDict.
+- **Why:** LangGraph channels are last-value-wins by default, so without a reducer each node would
+  OVERWRITE the prior node's timing/tokens. The reducer lets each node return only its own slice and
+  the graph accumulates them. This is the non-obvious LangGraph detail of the session.
+
+### Verified facts against the claude-api reference (not assumed)
+- Model id `claude-haiku-4-5` (bare, no date suffix); forced tool-use is
+  `tool_choice={"type": "tool", "name": ...}`; token usage on `resp.usage.input_tokens` /
+  `output_tokens`. These were confirmed before writing `llm.py`.
+
+### Forced tool-use for BOTH classify and generate_sql
+- **What:** classify emits the intent enum; `generate_sql` emits the SQL via an `emit_sql` tool
+  (property `sql`), not free text.
+- **Why:** forcing a tool guarantees a clean string with no prose/markdown fences to strip — the
+  "structured output via forced tool-use" standard, applied to SQL generation too.
+
+### Real run (evidence, Haiku, Supabase RO role)
+- `"¿cuántos pedidos hubo en mayo?"` → intent `answerable` → `SELECT COUNT(*) ... WHERE
+  EXTRACT(MONTH FROM created_at) = 5` → **"Hubo 856 pedidos en mayo."** 1 row, ~5.1 s total
+  (classify 1460 / generate 1180 / execute 1560 / synth 895 ms), 2100 in / 105 out tokens.
+- `"What are the top 3 products by revenue?"` → JOIN + GROUP BY + ORDER BY LIMIT 3 → grounded
+  English answer with the three real revenue figures. ~6.6 s, 2154 in / 192 out tokens.
+- Meets spec §8 first criterion (NL → correct end-to-end). Other §8 items are later sessions.
+
+### Gotcha (latent, noted not fixed): month filter ignores year
+- The May query used `EXTRACT(MONTH FROM created_at) = 5`, which matches May of **any** year. Harmless
+  on the current seed (orders only span 2025-12 → 2026-06, so May = May 2026), but it would over-count
+  once data spans multiple years. Candidate eval case for the SQL-correctness suite; not a v1 blocker.
