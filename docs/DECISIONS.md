@@ -65,3 +65,33 @@ Decisions only (what / why / how, input→output, gotchas). Not a line-by-line l
 ### External lead-time accounts activated Day 1
 - **What:** Supabase project + Railway account created/activated today, even though Railway is
   used later. Mirrors the project-#1 lesson: start external lead-time on Day 1.
+- **Update (Day 2):** Railway account actually created + activated on Day 2 (via GitHub login).
+
+---
+
+## Phase 2 — Day 2: graph design decisions (planning only, no code yet)
+
+Scope for the upcoming build: the minimal LangGraph **happy path** (classify → generate SQL →
+execute read-only → synthesize), without the self-correction loop or security reject branches.
+Three decisions were locked before coding:
+
+### classify is linear / log-only for the happy path
+- **What:** the `classify` node uses forced tool-use to produce the enum
+  (`answerable` / `out-of-schema` / `destructive`) and logs the intent, but the graph proceeds
+  straight to `generate_sql` regardless this session.
+- **Why:** the rule is "minimal graph RUNNING before adding the cycle." The conditional edge and
+  reject branches belong to the security session; wiring them now would front-load that scope.
+- **How:** linear `StateGraph`; the conditional routing on `intent` is added next session.
+
+### Synthesis via LLM (Haiku), not a template
+- **What:** a third Haiku call writes the final answer sentence interpreting the result.
+- **Why:** matches the question's language (ES/EN) and the result shape naturally; a fixed template
+  is rigid and can't adapt. The extra call's cost/latency is measured (instrument-before-asserting).
+- **Trade-off accepted:** +1 LLM call per query; anti-hallucination still enforced because the
+  sentence is grounded on the actual rows returned, not invented.
+
+### Execution guardrails added now (not deferred to security)
+- **What:** `statement_timeout` + a row cap via `fetchmany` live in the `execute_sql` node from day one.
+- **Why:** these are execution concerns (runaway-query protection), cheap, and independent of the
+  reject branches. They are NOT the security layer — schema validation + destructive rejection are
+  still deferred to the security session.
