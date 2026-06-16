@@ -194,3 +194,103 @@ and two conditional branches (`classify → reject`, `execute_sql → diagnose |
   exec_1 1474ms, synthesize 1489ms)
 - **Spec §8 status after Day 3:** criteria 1+2+3+4 all met (happy path + loop + reject + anti-hallucination).
   Remaining: evals suite (Day 5), cloud deploy (Day 6), README (Day 7).
+
+---
+
+## Phase 2 — Day 4: FastAPI + Dockerfile + Railway deploy
+
+### HTTP status semantics: 200 always for agent responses
+- **What:** `POST /ask` returns 200 for all agent outcomes including rejections
+  (`intent=destructive`, `intent=out_of_schema`). Only malformed input (empty or >500 chars)
+  returns 422 (FastAPI/Pydantic validation).
+- **Why:** the `intent` field carries the semantic (the agent understood and responded);
+  returning 400 for a destructive question would force callers to handle 4xx as a valid
+  agent state, which is semantically wrong. Mirrors how Anthropic's own API works (200 +
+  `stop_reason=content_filter` rather than 4xx).
+- **Split:** 422 = request malformed (never reached the agent); 200 = agent responded.
+
+### Rate limit: slowapi, 10 req/min per IP, in-memory
+- **What:** `slowapi>=0.1.9` wraps FastAPI with a per-IP limiter. Exceeded → 429.
+- **Why:** `POST /ask` is public and unauthenticated — direct vector for LLM cost abuse
+  (spec §4 anti-abuso). In-memory storage is correct for Railway single-instance.
+- **How:** `Limiter(key_func=get_remote_address)` on `app.state`; `@limiter.limit("10/minute")`
+  decorator on `ask`. The endpoint is `def` (sync), not `async` — FastAPI runs it in a
+  threadpool, which keeps the event loop free during blocking `graph.invoke()`.
+
+### Graph compiled once at startup (lifespan)
+- **What:** `@asynccontextmanager _lifespan` compiles the graph and stores it on `app.state.graph`.
+  Each request calls `app.state.graph.invoke(...)` — no recompile per request.
+- **Why:** `build_graph()` + LangGraph compile is ~0.5s cold. Paying it per request would
+  add 500ms to every API call. Startup is the right place for one-time work.
+
+### Dockerfile: uv base image, two-step sync for layer cache
+- **What:** `FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim`. Two COPY+RUN steps:
+  (1) `COPY pyproject.toml uv.lock README.md` + `uv sync --frozen --no-dev --no-install-project`
+  → installs all deps; (2) `COPY src/` + `uv sync --frozen --no-dev` → installs the project.
+- **Why two steps:** Docker layer cache is invalidated only when a COPY's source changes.
+  Deps don't change every commit; source does. With two steps, a source-only change skips
+  the slow dep-install layer.
+- **Why `--frozen`:** reproducible builds — `uv.lock` is committed and pinned.
+- **Why `--no-dev`:** excludes `ruff` and other dev tools from the runtime image.
+
+### Gotcha: Docker CMD shell form required for Railway's $PORT
+- **What:** the CMD uses shell form (`CMD sh -c "/app/.venv/bin/uvicorn ... --port ${PORT:-8000}"`)
+  instead of exec form (`CMD ["uvicorn", "--port", "${PORT:-8000}"]`).
+- **Why it matters:** exec form passes arguments directly to the process without a shell.
+  The string `${PORT:-8000}` is passed literally to uvicorn, which tries to parse it as a
+  port number and fails with `invalid literal for int()`. Railway injects `PORT` as a real
+  env var; shell form lets `sh -c` expand it before uvicorn sees it. The `:-8000` default
+  covers local `docker run` without `-e PORT=...`.
+- **Runtime path:** `/app/.venv/bin/uvicorn` (direct venv path, not `uv run`) avoids uv
+  needing a home directory cache when running as non-root `appuser`.
+
+### .dockerignore: excludes secrets + build noise
+- Excludes: `.env`, `.env.*` (secrets), `.venv` (local venv, rebuilt in container),
+  `.git` (history not needed in image), `db/`, `docs/`, `tests/`, `evals/`, `__pycache__`.
+- Result: only `pyproject.toml`, `uv.lock`, `README.md`, `src/` and the Dockerfile itself
+  end up in the Docker build context.
+
+### load_dotenv(override=False) — Railway env vars win
+- Changed from bare `load_dotenv()` to `load_dotenv(override=False)`.
+- **Why:** Railway (and any production PaaS) injects env vars at the OS level. Without
+  `override=False`, a stale `.env` file (if somehow present) would shadow the Railway vars.
+  With `override=False`: OS env wins; `.env` is a fallback for local dev only. Safer default.
+
+### Region: US West (co-located with Supabase us-west-1)
+- **What:** Railway service deployed in US West region.
+- **Why:** Supabase project is on `aws-1-us-west-1.pooler.supabase.com`. Cross-region
+  DB calls add ~150-300ms per query. The Day-1 region decision pays here: co-location
+  keeps DB latency in the 50-100ms range instead of 300-500ms. This mirrors the pain
+  point from project #1 (São Paulo → US East = 3.5s overhead).
+
+### Deployed container holds NO write-capable credentials — read-only is structural
+- **What:** Railway env vars contain only `DATABASE_URL_RO` (analyst_ro role, SELECT-only)
+  and `ANTHROPIC_API_KEY`. `DATABASE_URL` (admin/write) was never committed and is not
+  present in the deployed container.
+- **Why it matters:** read-only is not just a code convention ("we pinky-promise not to
+  write") — it is enforced at every layer: (1) DB role `analyst_ro` has only SELECT granted,
+  so even if a bug bypassed all application logic, a write query returns `permission denied`;
+  (2) the container has no admin credential to offer even if an attacker extracted env vars;
+  (3) `config.py` has an explicit guard that crashes startup if `DATABASE_URL` is present
+  without `DATABASE_URL_RO`, preventing accidental admin-credential redeploy.
+- **Evidence:** after deleting `DATABASE_URL` from Railway and redeploying:
+  `POST /ask "What are the top 5 products by revenue?"` → 200, intent=answerable,
+  grounded JOIN+GROUP BY answer, 3.2s total. Service never had `DATABASE_URL` set
+  during production operation; the first deploy inadvertently had it, this was caught
+  and cleaned up in the same session.
+- **Interview story:** "read-only in depth" — three independent layers, any one of which
+  is sufficient to prevent writes. This is the defense-in-depth answer to OWASP LLM Top 10.
+
+### Local smoke test results (before Railway deploy)
+- `GET /` → `{"status":"ok","model":"claude-haiku-4-5"}` ✓
+- `POST /ask {"question":"How many orders in May 2026?"}` → 200, intent=answerable,
+  cycles=0, 856 orders, ~7.8s (classify 1903 / gen 2205 / exec 1551 / synth 2150 ms) ✓
+- `POST /ask {"question":"DELETE FROM orders WHERE 1=1"}` → 200, intent=destructive,
+  sql=null, cycles=0, reject latency=0ms (no LLM after classify) ✓
+- `POST /ask {"question":""}` → 422 with Pydantic error detail ✓
+
+### Live verification (Railway, local uvicorn OFF — spec §8 criterion 6)
+- Pre-delete `DATABASE_URL`: `POST /ask "How many orders in May 2026?"` → 856 orders,
+  2.1s total (exec 101ms — co-location with Supabase us-west-1 confirmed).
+- Post-delete `DATABASE_URL`: `POST /ask "What are the top 5 products by revenue?"` →
+  grounded answer with real revenue figures, 3.2s total (exec 132ms). Spec §8 criterion 6 ✓
