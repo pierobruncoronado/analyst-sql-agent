@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=False)  # Railway env vars take precedence over any local .env
 
 # Haiku by default (spec: classification + SQL generation). Bump to Sonnet only if
 # evals demand it — decided by data, not intuition. Verified against the claude-api

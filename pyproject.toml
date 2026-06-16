@@ -11,6 +11,10 @@ dependencies = [
     # Phase 2 core: LangGraph orchestration + Anthropic (Haiku) for classify/generate/synthesize.
     "langgraph>=0.2",
     "anthropic>=0.40",
+    # HTTP layer + rate limiting (anti-abuso, spec §4).
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "slowapi>=0.1.9",
 ]
 
 [dependency-groups]
