@@ -32,11 +32,25 @@ class Config:
 
 
 def load_config() -> Config:
-    """Read + validate env. Fail-closed: missing required secret → raise."""
+    """Read + validate env. Fail-closed: missing required secret → raise.
+
+    Runtime contract: only DATABASE_URL_RO and ANTHROPIC_API_KEY are required.
+    DATABASE_URL (admin) is NEVER read here — it exists only for local db/ scripts
+    (seed, schema, create_readonly_role). The container must not hold admin credentials.
+    """
     ro = os.environ.get("DATABASE_URL_RO", "").strip()
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not ro:
+        # Explicit guard: catch the common misconfiguration of setting the admin URL
+        # instead of the read-only URL. Silent fallback to admin creds is worse than
+        # a startup crash with a clear message.
+        if os.environ.get("DATABASE_URL"):
+            raise RuntimeError(
+                "DATABASE_URL_RO is not set but DATABASE_URL (admin) is present. "
+                "The runtime must connect as the read-only role (analyst_ro). "
+                "Set DATABASE_URL_RO and remove DATABASE_URL from production env."
+            )
         raise RuntimeError("DATABASE_URL_RO is not set (read-only DB URL). Check .env.")
     if not key:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set. Paste it into .env.")
+        raise RuntimeError("ANTHROPIC_API_KEY is not set. Check .env.")
     return Config(database_url_ro=ro, anthropic_api_key=key)
