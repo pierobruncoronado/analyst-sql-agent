@@ -15,11 +15,11 @@ from dotenv import load_dotenv
 
 
 COUNTS_SQL = """
-SELECT 'customers' AS table, COUNT(*) AS rows FROM customers
+SELECT 'customers' AS table_name, COUNT(*) AS rows FROM customers
 UNION ALL SELECT 'products', COUNT(*) FROM products
 UNION ALL SELECT 'orders', COUNT(*) FROM orders
 UNION ALL SELECT 'order_items', COUNT(*) FROM order_items
-ORDER BY table;
+ORDER BY table_name;
 """
 
 DATE_RANGE_SQL = """

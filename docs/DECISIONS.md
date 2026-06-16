@@ -45,8 +45,22 @@ Decisions only (what / why / how, input→output, gotchas). Not a line-by-line l
   (spec §3). Created now so the runtime URL is ready from the start.
 - **How:** `db/create_readonly_role.py` grants USAGE + SELECT (+ default privileges for future
   tables), explicitly REVOKEs INSERT/UPDATE/DELETE/TRUNCATE, and prints `DATABASE_URL_RO`.
-- **Gotcha:** Supabase's session pooler expects the username as `<role>.<project-ref>`; the script
-  derives the RO URL by swapping `postgres` → `analyst_ro` in the admin username.
+- **Gotcha (confirmed working):** Supabase's session pooler expects a custom role's username as
+  `<role>.<project-ref>` (e.g. `analyst_ro.vmzcojbvsjhsdsqakpsy`), **not** `analyst_ro` alone —
+  auth fails otherwise. `create_readonly_role.py` derives the RO URL by swapping
+  `postgres` → `analyst_ro` in the admin username, preserving the `.<ref>` suffix.
+- **Verified:** `db/check_readonly.py` connects as `analyst_ro`, SELECT returns 200 customers,
+  INSERT is rejected with `permission denied for table customers`. Read-only holds at the
+  connection layer, not just in the prompt.
+
+### Region check (us-west-1)
+- **What:** Supabase project host is `aws-1-us-west-1.pooler.supabase.com` → region us-west-1.
+- **Why it matters:** São Paulo (sa-east) reintroduces ~3.5s cross-region overhead (project-#1 pain).
+  us-west-1 confirmed before seeding. The `aws-1` prefix is just the pooler instance number, not the region.
+
+### Minor: `table` is a reserved word
+- `verify.py` aliased a count column `AS table`, which Postgres rejects in `ORDER BY`. Renamed to
+  `table_name`. Noted so future generated SQL avoids reserved identifiers unquoted.
 
 ### External lead-time accounts activated Day 1
 - **What:** Supabase project + Railway account created/activated today, even though Railway is

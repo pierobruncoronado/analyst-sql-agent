@@ -14,17 +14,19 @@ lead-time accounts (Supabase + Railway) activated today.
 - [x] `db/create_readonly_role.py` (SELECT-only role + derived RO URL).
 - [x] Renamed spec to `docs/spec.md`; `docs/DECISIONS.md` started.
 
-### Blocked on user (external lead-time, browser)
-- [ ] Create Supabase project → paste **Session pooler (5432)** `DATABASE_URL` into `.env`.
-- [ ] Create + activate Railway account (used later; activate today for lead-time).
+### External lead-time
+- [x] Supabase project created (us-west-1) → `DATABASE_URL` (Session pooler 5432) in `.env`.
+- [ ] **Railway account create + activate** — still pending on user (used later; activate for lead-time).
 
-### Done once DATABASE_URL is provided
-- [ ] `uv sync` (install deps) — *pending verification run*.
-- [ ] `uv run python db/apply_schema.py` — create schema.
-- [ ] `uv run python db/seed.py` — seed data.
-- [ ] `uv run python db/verify.py` — show real counts + date range (acceptance proof).
-- [ ] `uv run python db/create_readonly_role.py` — create RO role, fill `DATABASE_URL_RO`.
-- [ ] Commit + push to https://github.com/pierobruncoronado/analyst-sql-agent
+### DB applied + verified (real output)
+- [x] `uv sync` — venv built, deps installed.
+- [x] `db/apply_schema.py` — schema applied to Supabase.
+- [x] `db/seed.py` — 200 customers / 50 products / 5,000 orders / 15,164 order_items.
+- [x] `db/verify.py` — counts OK; order range 2025-12-18 → 2026-06-16 (7 calendar months);
+      top-5-by-revenue JOIN query works.
+- [x] `db/create_readonly_role.py` — `analyst_ro` created; `DATABASE_URL_RO` in `.env`.
+- [x] `db/check_readonly.py` — SELECT ok, INSERT denied → read-only proven.
+- [x] Second commit + push to https://github.com/pierobruncoronado/analyst-sql-agent
 
 ## Next session (Phase 2 cont.)
 - Start the LangGraph state machine: typed graph state + `classify` node (forced tool-use
