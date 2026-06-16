@@ -1,0 +1,20 @@
+[project]
+name = "analyst-sql-agent"
+version = "0.1.0"
+description = "Conversational SQL agent (NL->SQL, ES/EN) with a LangGraph self-correction loop over a fixed, read-only sales schema."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Phase 2 (infra + seed) only. LangGraph / Anthropic / FastAPI are added in their own phases.
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.0",
+    "faker>=30.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
