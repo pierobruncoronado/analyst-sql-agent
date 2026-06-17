@@ -4,10 +4,9 @@ Volume (per CLAUDE.md decision, "medium"):
   ~200 customers, ~50 products, ~5,000 orders over the last 6 months,
   each order with 1-5 line items (~15k order_items).
 
-Determinism: RNG and Faker are seeded with a fixed SEED, so the *shape* of the
-data is reproducible across runs. Order dates are anchored to the real "today"
-at run time so that relative questions ("last month", "inactive 90 days") stay
-meaningful. Re-running TRUNCATEs first, so it is idempotent.
+Determinism: RNG and Faker are seeded with a fixed SEED; NOW_ANCHOR fixes the
+date window so per-month counts are identical on every re-run and every clone.
+Re-running TRUNCATEs first, so it is idempotent.
 
 Usage:
   uv run python db/seed.py
@@ -24,6 +23,10 @@ from dotenv import load_dotenv
 from faker import Faker
 
 SEED = 42
+# Fixed anchor — keeps per-month counts identical on every re-run and every clone.
+# Changing this date is a breaking change: it shifts per-month counts everywhere.
+NOW_ANCHOR = datetime(2026, 6, 16, 0, 0, 0, tzinfo=timezone.utc)
+
 N_CUSTOMERS = 200
 N_PRODUCTS = 50
 N_ORDERS = 5_000
@@ -118,7 +121,7 @@ def main() -> None:
     fake = Faker()
     fake.seed_instance(SEED)
 
-    now = datetime.now(timezone.utc)
+    now = NOW_ANCHOR
 
     print("Building synthetic data...")
     customers = _build_customers(fake, now)

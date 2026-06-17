@@ -36,6 +36,8 @@ Both return HTTP 200. The `intent` field carries the semantic: `answerable` | `o
 | DB query time (`execute_sql`) | ~101 ms |
 | Cost per query | ~$0.003 (Haiku 4.5, ~2 100 in / 130 out tokens) |
 | Self-correction cycles (typical) | 0–1 |
+| Eval suite | 7/7 hard assertions · 3/3 LLM-judge=1 · $0.017/run · 21 s |
+| Unit tests | 11 deterministic tests · 2.35 s · no API/DB calls |
 | Rate limit | 10 req / min per IP |
 
 **Why 101 ms for the DB query:** Railway compute and Supabase are both in `us-west-1`.
@@ -193,5 +195,4 @@ Postgres on [Supabase](https://supabase.com) · psycopg3 ·
 
 - [`docs/spec.md`](docs/spec.md) — full specification (source of truth, acceptance criteria)
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — decision log: what / why / how, real run evidence, gotchas
-- `CASE_STUDY.md` — *(coming: problem → architecture → decisions → metrics → loop story)*
-- Loom walkthrough — *(coming)*
+- [`CASE_STUDY.md`](CASE_STUDY.md) — problem → architecture → results → decisions → v2 scope

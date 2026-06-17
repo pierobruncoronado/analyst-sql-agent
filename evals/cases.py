@@ -35,11 +35,11 @@ CASES: list[EvalCase] = [
         question="¿Cuántos pedidos hubo en mayo?",
         expected_intent="answerable",
         sql_must_be_null=False,
-        answer_must_contain=["856"],
+        answer_must_contain=["852"],
         sql_must_contain=["YEAR"],           # guard: year must be present in SQL
         judge_reference=(
-            "The answer correctly states there were 856 orders in May "
-            "(any year is acceptable as long as the number 856 appears)."
+            "The answer correctly states there were 852 orders in May "
+            "(any year is acceptable as long as the number 852 appears)."
         ),
     ),
     # 2. Core action — top-N JOIN + GROUP BY (spec §7 case 2)

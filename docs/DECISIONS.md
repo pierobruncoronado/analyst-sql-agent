@@ -297,7 +297,7 @@ and two conditional branches (`classify → reject`, `execute_sql → diagnose |
 - **What:** `evals/run.py` — runs 7 `EvalCase` objects sequentially, builds the graph once
   and reuses it. Two assertion tiers: hard (fail CI) and soft (warn only).
 - **Hard assertions:** `intent` match, `sql_null` for rejection paths, `answer_must_contain`
-  substrings (e.g. "856" for the count case), `sql_must_contain` substrings (e.g. "YEAR"
+  substrings (e.g. "852" for the count case), `sql_must_contain` substrings (e.g. "YEAR"
   for the month-filter guard), LLM-as-judge score==1.
 - **Soft assertion:** `cycles_soft_min` — warns if cycles < expected, does NOT fail CI.
   Rationale: the loop mechanic is verified by deterministic unit tests; the eval verifies
@@ -361,5 +361,37 @@ and two conditional branches (`classify → reject`, `execute_sql → diagnose |
 ### Live verification (Railway, local uvicorn OFF — spec §8 criterion 6)
 - Pre-delete `DATABASE_URL`: `POST /ask "How many orders in May 2026?"` → 856 orders,
   2.1s total (exec 101ms — co-location with Supabase us-west-1 confirmed).
+  *(856 is the historical figure from the original seed run; see Day 6 for the canonical count.)*
 - Post-delete `DATABASE_URL`: `POST /ask "What are the top 5 products by revenue?"` →
   grounded answer with real revenue figures, 3.2s total (exec 132ms). Spec §8 criterion 6 ✓
+
+---
+
+## Phase 2 — Day 6: documentation close + seed determinism fix
+
+### Seed determinism: NOW_ANCHOR (breaking change from original seed)
+- **Problem:** `seed.py` used `now = datetime.now(timezone.utc)` as the anchor for order dates.
+  `random.seed(SEED)` was set, but the date window shifted with every day that passed, so
+  per-month counts changed on every re-run. Running on Day 4 gave 856 orders in May; running
+  the walkthrough verification on Day 6 gave 867. "Reproducible" was a false claim.
+- **Fix:** added `NOW_ANCHOR = datetime(2026, 6, 16, 0, 0, 0, tzinfo=timezone.utc)` to `seed.py`
+  and replaced `datetime.now()` with `NOW_ANCHOR`. Any clone that runs `db/seed.py` with
+  `SEED=42` now produces an identical date distribution: orders from 2025-12-18 to 2026-06-15.
+- **Canonical count (post-fix, confirmed live):** 852 orders in May 2026. This number is used
+  in `evals/cases.py` (`answer_must_contain=["852"]`) and in CASE_STUDY.md and README.
+- **Historical records:** Day 2 log (856 from original seed) and Day 4 smoke test (856) reflect
+  the old data. They are accurate records of what was true at the time; they are not updated.
+- **Tradeoff:** fixing `NOW_ANCHOR` means "inactive in the last 90 days" questions return
+  different results than a live `NOW()`. Acceptable for v1: the schema is fixed/synthetic and
+  the agent's SQL uses `CURRENT_DATE` dynamically for relative queries — only the seed data
+  has a fixed cutoff.
+
+### Reproducibility verification (clone → run)
+- Cloned repo to `/tmp/analyst-clone` (Git Bash, Windows), ran `uv sync --frozen`.
+  Result: 61 packages, 3.86 s, venv created from scratch. ✓
+- Ran `db/apply_schema.py` in clone: Applied schema.sql successfully. ✓
+- Ran `db/seed.py` in clone with fixed anchor: 200/50/5000/15164 rows. ✓
+- Ran `uv run python -m analyst "How many orders were placed in May 2026?"`: answer "852" in 4.0s.
+  YEAR guard in SQL confirmed. ✓
+- Confirmed live Railway endpoint returns 852. ✓
+- "Clone → run in under 10 minutes" claim verified and now fully reproducible.
