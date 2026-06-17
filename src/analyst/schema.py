@@ -18,4 +18,7 @@ Notes:
 - Line-item revenue is order_items.quantity * order_items.unit_price.
 - There is NO cost column anywhere, so profit/margin is NOT derivable from this data.
 - "now" relative questions ("last month", "last 90 days") should use now()/CURRENT_DATE.
+- When filtering by a specific month number with EXTRACT(MONTH FROM col), ALWAYS include
+  a year filter too (EXTRACT(YEAR FROM col) = EXTRACT(YEAR FROM CURRENT_DATE)) to avoid
+  matching the same month across different years.
 """

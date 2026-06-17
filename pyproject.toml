@@ -20,7 +20,11 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.6",
+    "pytest>=8.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [project.scripts]
 analyst = "analyst.__main__:main"

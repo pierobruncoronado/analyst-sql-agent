@@ -289,6 +289,75 @@ and two conditional branches (`classify → reject`, `execute_sql → diagnose |
   sql=null, cycles=0, reject latency=0ms (no LLM after classify) ✓
 - `POST /ask {"question":""}` → 422 with Pydantic error detail ✓
 
+---
+
+## Phase 2 — Day 5: eval suite + CI gate
+
+### Eval harness design
+- **What:** `evals/run.py` — runs 7 `EvalCase` objects sequentially, builds the graph once
+  and reuses it. Two assertion tiers: hard (fail CI) and soft (warn only).
+- **Hard assertions:** `intent` match, `sql_null` for rejection paths, `answer_must_contain`
+  substrings (e.g. "856" for the count case), `sql_must_contain` substrings (e.g. "YEAR"
+  for the month-filter guard), LLM-as-judge score==1.
+- **Soft assertion:** `cycles_soft_min` — warns if cycles < expected, does NOT fail CI.
+  Rationale: the loop mechanic is verified by deterministic unit tests; the eval verifies
+  answer quality. Asserting cycles>=1 in CI would gate on LLM non-determinism (flaky).
+
+### LLM-as-judge: Haiku, score 0/1
+- **What:** `evals/judge.py` — one Haiku `text()` call per answerable case. Prompt asks
+  to score whether the actual answer conveys what the reference describes. Replies "1" or "0".
+- **Why Haiku:** fast (~600ms) and cheap (~100 tokens/call). For 3 judge calls, the cost
+  is negligible. A judge harness error (API failure, non-parseable response) returns -1
+  and is surfaced as a hard failure — distinguishes harness error from real score 0.
+- **Three cases judged:** `happy_count`, `top5_revenue`, `loop_mom`.
+- **Not judged:** rejection cases (template reply, deterministic) and off-topic (same).
+
+### Month-filter guard: added to schema prompt
+- **What:** added to `SCHEMA_DESCRIPTION`: "When filtering by a specific month number with
+  EXTRACT(MONTH FROM col), ALWAYS include a year filter too (EXTRACT(YEAR FROM col) =
+  EXTRACT(YEAR FROM CURRENT_DATE)) to avoid matching the same month across different years."
+- **Why now:** the latent bug (EXTRACT(MONTH...)=5 without year) was identified Day 2.
+  The eval case `happy_count` now asserts `"YEAR" in sql` — making the guard testable.
+- **Evidence (baseline run):** Haiku generated `EXTRACT(YEAR FROM CURRENT_DATE)` in the
+  SQL for "¿Cuántos pedidos hubo en mayo?" — year guard present, assertion passed.
+
+### Deterministic unit tests: loop mechanic isolated from LLM
+- **What:** `tests/test_loop.py` — 11 pytest tests, zero real API/DB calls.
+  - 4 routing tests: `_route_execute` and `_route_classify` pure functions.
+  - 4 full-graph tests with `_FakeLLM` (duck-typed) + `patch("analyst.nodes.run_readonly")`.
+- **Test coverage:** cap at 3 cycles exhausted; honest decline message after exhaustion;
+  recovery on second attempt (cycles=1); cycle_count advances per diagnose, not per execute.
+- **Why separate from evals:** evals verify answer quality (non-deterministic output);
+  unit tests verify graph mechanics (deterministic behavior). Decision A confirmed.
+- **Runtime:** 11 tests in 2.35s, no network. CI runs these before evals (cheaper gate first).
+
+### Baseline result (2026-06-16, Haiku 4.5, local)
+| case | intent | cycles | judge | latency | tokens |
+|------|--------|--------|-------|---------|--------|
+| happy_count | answerable | 0 | 1 | 7142ms | 2366in/137out |
+| top5_revenue | answerable | 0 | 1 | 4163ms | 2527in/231out |
+| loop_mom | answerable | **0** (soft warn) | 1 | 5650ms | 2823in/482out |
+| no_margin | out_of_schema | 0 | — | 704ms | 1076in/37out |
+| off_topic | out_of_schema | 0 | — | 688ms | 1072in/37out |
+| injection_sql | destructive | 0 | — | 1729ms | 1072in/34out |
+| injection_natural | destructive | 0 | — | 1131ms | 1075in/34out |
+
+- **Result:** 7/7 hard assertions, 3/3 judge calls = 1, 1 soft warning (loop_mom cycles=0).
+- **loop_mom soft warning note:** Haiku used a CTE (`WITH monthly_revenue AS (...)`) that
+  avoids the window-over-aggregate nesting error that tripped it in Day 3. LLM
+  non-determinism — the loop mechanic is verified by unit tests, not the eval.
+- **Threshold (set after seeing baseline):** 7/7 hard assertions. CI gate: exit 0 iff all pass.
+- **Suite cost:** $0.0170 total per run. Cheap enough to run on every push.
+- **Spec §8 criterion 5:** eval suite run, baseline documented, cost measured. ✓
+
+### CI: two-job GitHub Actions workflow
+- **Job 1 (unit-tests):** pytest, no secrets, ~3s. Runs always.
+- **Job 2 (evals):** eval suite, needs DATABASE_URL_RO + ANTHROPIC_API_KEY secrets.
+  Runs after unit-tests pass. Skipped on PRs from forks (no secret access).
+- **Gate:** evals/run.py exits 1 if any hard assertion fails → GitHub check fails.
+- **Setup required:** add `DATABASE_URL_RO` and `ANTHROPIC_API_KEY` as repository secrets
+  in GitHub Settings → Secrets → Actions before the first CI run.
+
 ### Live verification (Railway, local uvicorn OFF — spec §8 criterion 6)
 - Pre-delete `DATABASE_URL`: `POST /ask "How many orders in May 2026?"` → 856 orders,
   2.1s total (exec 101ms — co-location with Supabase us-west-1 confirmed).
