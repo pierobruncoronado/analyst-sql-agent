@@ -199,9 +199,16 @@ def diagnose(state: GraphState, deps: Deps) -> dict[str, Any]:
         latency_ms=ms,
         tokens=tokens,
     )
+    trace_entry = {
+        "cycle": new_cycle,
+        "sql_attempted": failed_sql,
+        "db_error": raw_error,
+        "diagnosis": diagnosis_text.strip(),
+    }
     return {
         "diagnosis": diagnosis_text.strip(),
         "cycle_count": new_cycle,
+        "trace": [trace_entry],
         "latency_ms": {f"diagnose_{new_cycle}": ms},
         "tokens": {f"diagnose_{new_cycle}": tokens},
     }

@@ -395,3 +395,33 @@ and two conditional branches (`classify → reject`, `execute_sql → diagnose |
   YEAR guard in SQL confirmed. ✓
 - Confirmed live Railway endpoint returns 852. ✓
 - "Clone → run in under 10 minutes" claim verified and now fully reproducible.
+
+---
+
+## Phase 2 — Frontend demo (chat UI)
+
+### Outcome
+Added a single-page chat UI served at `GET /` so a stranger can open the Railway URL and demo the agent without any setup.
+
+### `trace` list added to graph state
+- **What:** `GraphState` gains `trace: Annotated[list[dict], _append]` with a list-append reducer. The `diagnose` node appends `{cycle, sql_attempted, db_error, diagnosis}` per correction cycle. `api.py` exposes `trace: list[dict]` in `AskResponse`.
+- **Why:** The original response only contained the final SQL. The frontend needed per-cycle data (failed SQL, DB error, LLM diagnosis) to render the autocorrection trace panel.
+- **How:** `_append` reducer (analogous to `_merge` for dicts) accumulates entries across cycles. `diagnose` is the right node to write the entry — it has all three pieces already (failed SQL from state, raw error from state, LLM diagnosis just produced).
+
+### `GET /` now serves the chat UI; `GET /health` replaces the old JSON root
+- **What:** Root route returns `HTMLResponse` (HTML loaded from `src/analyst/ui.html` at startup). `GET /health` returns `{"status":"ok"}` for programmatic checks.
+- **Why:** The Railway URL is the demo entry point. A stranger opens the URL, not `/app`. Railway's health check only needs HTTP 200 — an HTML response is still 200, so the health check passes without reconfiguring Railway.
+- **How:** `_lifespan` reads `ui.html` once at startup and stores it on `app.state.ui_html`. No file I/O per request.
+
+### UI: single HTML file, no build step
+- **What:** `src/analyst/ui.html` — plain HTML + CSS + vanilla JS. Dark midnight-blue theme (`#080b12`). Three example chips, monospace prompt input, result card with: status bar (dot + label + latency), answer text, collapsible SQL block with keyword syntax highlighting, autocorrection trace panel (only when `trace.length > 0`).
+- **Signature element:** Left accent border on the answer card switches color: green (0 cycles, answered cleanly) / amber (cycles > 0, correction happened) / red (destructive reject). Communicates answer quality at a glance.
+- **Status bar:** amber dot + "Answered · N corrections needed" when cycles > 0; green + "Answered" for clean path; red + "Blocked" for destructive; gray for out-of-scope.
+- **Syntax highlighting:** Client-side keyword pass (regex on escaped HTML) colors SQL keywords indigo, string literals green, numbers amber. Safe approach: string literals wrapped first, then keyword regex only outside existing spans.
+- **Markdown stripping:** `synthesize` decline messages embed the raw LLM diagnosis which can contain `**bold**` markdown. `stripMd()` in JS strips `**`, `*`, and `` ` `` before setting `textContent`.
+
+### Unit tests: all 11 pass after state changes
+- The `trace` field uses `total=False` (optional in TypedDict), so existing tests that don't set `trace` in their fake state are unaffected. Confirmed: 11/11 pass in 3.11s.
+
+### Not changed: Railway config
+- No `railway.json` or `railway.toml` exists. Railway uses default health check (HTTP 200 on `/`). HTML response is still 200 — no Railway dashboard changes needed.

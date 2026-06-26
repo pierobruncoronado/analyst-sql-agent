@@ -10,9 +10,11 @@ Rejections (out_of_schema, destructive) → 200 + intent field (agent responded 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -34,6 +36,7 @@ async def _lifespan(app: FastAPI):
     cfg = load_config()
     deps = Deps(cfg=cfg, llm=LLM(cfg))
     app.state.graph = build_graph(deps)
+    app.state.ui_html = (Path(__file__).parent / "ui.html").read_text(encoding="utf-8")
     log_event("startup", model=cfg.model, row_cap=cfg.row_cap)
     yield
     log_event("shutdown")
@@ -59,13 +62,20 @@ class AskResponse(BaseModel):
     intent: str | None = None
     sql: str | None = None
     cycles: int = 0
+    trace: list[dict] = Field(default_factory=list)
     latency_ms: dict = Field(default_factory=dict)
     tokens: dict = Field(default_factory=dict)
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    """Chat UI — served at the root so the Railway URL opens the demo directly."""
+    return HTMLResponse(content=request.app.state.ui_html)
+
+
+@app.get("/health")
 def health():
-    """Health check — Railway polls this to decide if traffic can be routed."""
+    """JSON health check for programmatic probes and Railway health polling."""
     return {"status": "ok", "model": "claude-haiku-4-5"}
 
 
@@ -82,6 +92,7 @@ def ask(request: Request, body: AskRequest) -> AskResponse:
         "question": body.question,
         "cycle_count": 0,
         "diagnosis": "",
+        "trace": [],
         "latency_ms": {},
         "tokens": {},
     })
@@ -98,6 +109,7 @@ def ask(request: Request, body: AskRequest) -> AskResponse:
         intent=final.get("intent"),
         sql=final.get("sql"),
         cycles=final.get("cycle_count", 0),
+        trace=final.get("trace", []),
         latency_ms=latency,
         tokens=final.get("tokens", {}),
     )

@@ -18,6 +18,11 @@ def _merge(left: dict, right: dict) -> dict:
     return {**left, **right}
 
 
+def _append(left: list | None, right: list | None) -> list:
+    """Reducer: accumulate per-cycle trace entries across the correction loop."""
+    return (left or []) + (right or [])
+
+
 class GraphState(TypedDict, total=False):
     """State threaded through the graph, including the self-correction cycle."""
 
@@ -30,6 +35,7 @@ class GraphState(TypedDict, total=False):
     error: str | None
     cycle_count: int      # incremented by diagnose; guards the 3-cycle cap
     diagnosis: str        # LLM explanation of what went wrong; injected into next generate_sql
+    trace: Annotated[list[dict], _append]   # per-cycle: {cycle, sql_attempted, db_error, diagnosis}
     latency_ms: Annotated[dict[str, float], _merge]
     tokens: Annotated[dict[str, dict[str, int]], _merge]
 

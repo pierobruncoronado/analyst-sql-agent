@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analyst — conversational SQL agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:          #080b12;
+      --surface:     #0f1221;
+      --surface-2:   #161929;
+      --border:      #1f2438;
+      --accent:      #6366f1;
+      --accent-glow: rgba(99,102,241,0.14);
+      --text:        #dde0f0;
+      --text-muted:  #6b7194;
+      --green:       #34d399;
+      --amber:       #fbbf24;
+      --red:         #f87171;
+      --code-bg:     #090c18;
+      --kw:          #818cf8;
+      --str:         #86efac;
+      --num:         #fbbf24;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 15px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+      padding: 0 1.25rem;
+    }
+
+    /* ── Header ── */
+    header {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 2.5rem 0 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .wordmark {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 1.35rem;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 0.55ch;
+      height: 1.05em;
+      background: var(--accent);
+      vertical-align: text-bottom;
+      margin-left: 2px;
+      animation: blink 1.1s step-end infinite;
+    }
+    @media (prefers-reduced-motion: reduce) { .cursor { animation: none; opacity: 1; } }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .tagline {
+      display: block;
+      margin-top: 0.3rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Main ── */
+    main {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 2rem 0 5rem;
+    }
+
+    /* ── Example chips ── */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 1.1rem;
+    }
+
+    .chip {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.7rem;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      line-height: 1.4;
+    }
+    .chip:hover, .chip:focus-visible {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--accent-glow);
+      outline: none;
+    }
+
+    /* ── Input ── */
+    .input-wrap {
+      position: relative;
+    }
+
+    .prompt-glyph {
+      position: absolute;
+      left: 0.85rem;
+      top: 0.72rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--accent);
+      user-select: none;
+      pointer-events: none;
+      line-height: 1;
+    }
+
+    #question {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.82rem;
+      padding: 0.68rem 0.9rem 0.68rem 2rem;
+      resize: vertical;
+      min-height: 3.2rem;
+      line-height: 1.55;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    #question:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    #question::placeholder { color: var(--text-muted); }
+
+    .form-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.55rem;
+    }
+
+    .hint {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    #submit-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.5rem 1.15rem;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    #submit-btn:hover:not(:disabled) { opacity: 0.88; }
+    #submit-btn:active:not(:disabled) { transform: scale(0.97); }
+    #submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Divider ── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.75rem 0;
+    }
+
+    /* ── Loading ── */
+    #loading {
+      display: none;
+      align-items: center;
+      gap: 0.7rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    #loading.visible { display: flex; }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error banner ── */
+    #error-block {
+      display: none;
+      background: rgba(248,113,113,0.07);
+      border: 1px solid rgba(248,113,113,0.22);
+      border-radius: 8px;
+      color: var(--red);
+      font-size: 0.85rem;
+      padding: 0.75rem 1rem;
+    }
+    #error-block.visible { display: block; }
+
+    /* ── Result card ── */
+    #result {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #result.visible { display: block; }
+
+    /* Status bar */
+    .result-status {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.6rem 1rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-label { font-weight: 500; color: var(--text); }
+    .status-sep { opacity: 0.4; }
+
+    /* Answer */
+    .answer-body {
+      padding: 1.2rem 1.25rem 1rem;
+      border-left: 3px solid transparent;
+      transition: border-color 0.25s;
+    }
+
+    #answer-text {
+      font-size: 1rem;
+      font-weight: 500;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    .meta-row {
+      margin-top: 0.5rem;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* SQL section */
+    .sql-section {
+      border-top: 1px solid var(--border);
+    }
+
+    details summary {
+      list-style: none;
+    }
+    details summary::-webkit-details-marker { display: none; }
+
+    .sql-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.65rem 1rem;
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      user-select: none;
+      transition: color 0.15s;
+    }
+    .sql-toggle:hover { color: var(--text); }
+
+    .toggle-chevron {
+      font-size: 0.6rem;
+      transition: transform 0.18s;
+      display: inline-block;
+    }
+    details[open] .toggle-chevron { transform: rotate(90deg); }
+
+    pre {
+      background: var(--code-bg);
+      border-top: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 0;
+      tab-size: 2;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.78rem;
+      line-height: 1.7;
+      color: #b8bcda;
+    }
+
+    .kw  { color: var(--kw); font-weight: 500; }
+    .str { color: var(--str); }
+    .num { color: var(--num); }
+
+    /* Trace section */
+    .trace-section {
+      border-top: 1px solid var(--border);
+    }
+
+    .trace-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1rem;
+      background: rgba(251,191,36,0.04);
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--amber);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .trace-item {
+      padding: 1rem 1.25rem;
+    }
+    .trace-item + .trace-item {
+      border-top: 1px solid var(--border);
+    }
+
+    .cycle-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: rgba(251,191,36,0.08);
+      border: 1px solid rgba(251,191,36,0.2);
+      color: var(--amber);
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.12rem 0.5rem;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.85rem;
+    }
+
+    .trace-sublabel {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.3rem;
+    }
+
+    .trace-code {
+      background: rgba(248,113,113,0.05);
+      border: 1px solid rgba(248,113,113,0.12);
+      border-radius: 6px;
+      padding: 0.65rem 0.9rem;
+      margin-bottom: 0.75rem;
+      overflow-x: auto;
+    }
+    .trace-code code { color: #f9a8a8; font-size: 0.75rem; }
+
+    .error-callout {
+      background: rgba(248,113,113,0.06);
+      border-left: 3px solid rgba(248,113,113,0.5);
+      border-radius: 0 5px 5px 0;
+      padding: 0.55rem 0.8rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.77rem;
+      color: #fca5a5;
+      font-family: 'JetBrains Mono', monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.5;
+    }
+
+    .diagnosis-callout {
+      background: rgba(251,191,36,0.05);
+      border-left: 3px solid rgba(251,191,36,0.4);
+      border-radius: 0 5px 5px 0;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.82rem;
+      color: #fde68a;
+      line-height: 1.55;
+    }
+
+    /* ── Footer ── */
+    footer {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 1.25rem 0 2rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+    footer a:hover { color: var(--text); }
+
+    /* ── Responsive ── */
+    @media (max-width: 520px) {
+      body { padding: 0 0.75rem; }
+      .form-footer .hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="wordmark">Analyst<span class="cursor"></span></span>
+  <span class="tagline">Ask anything about the sales data. Get SQL + an answer.</span>
+</header>
+
+<main>
+  <div class="chips" role="group" aria-label="Example questions">
+    <button class="chip" data-q="¿Cuántos pedidos hubo en mayo de 2026?">
+      ¿Pedidos en mayo?
+    </button>
+    <button class="chip" data-q="What are the top 5 products by revenue?">
+      Top 5 products by revenue
+    </button>
+    <button class="chip" data-q="Show me the month-over-month revenue for 2026, including the absolute change from the prior month">
+      Month-over-month revenue ↺
+    </button>
+  </div>
+
+  <form id="ask-form" novalidate>
+    <div class="input-wrap">
+      <span class="prompt-glyph" aria-hidden="true">&gt;</span>
+      <textarea
+        id="question"
+        rows="2"
+        placeholder="Ask about customers, orders, or products…"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+        aria-label="Question"
+      ></textarea>
+    </div>
+    <div class="form-footer">
+      <span class="hint">Ctrl+Enter to submit</span>
+      <button type="submit" id="submit-btn">Ask →</button>
+    </div>
+  </form>
+
+  <hr class="divider">
+
+  <div id="loading" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <span>Running query…</span>
+  </div>
+
+  <div id="error-block" role="alert" aria-live="assertive"></div>
+
+  <div id="result" aria-live="polite">
+    <div class="result-status">
+      <div class="status-dot" id="status-dot" aria-hidden="true"></div>
+      <span class="status-label" id="status-label"></span>
+      <span class="status-sep">·</span>
+      <span id="status-meta"></span>
+    </div>
+
+    <div class="answer-body" id="answer-body">
+      <div id="answer-text"></div>
+      <div class="meta-row" id="meta-row"></div>
+    </div>
+
+    <div class="sql-section" id="sql-section">
+      <details open>
+        <summary class="sql-toggle">
+          <span class="toggle-chevron" aria-hidden="true">▶</span>
+          SQL generated
+        </summary>
+        <pre><code id="sql-code"></code></pre>
+      </details>
+    </div>
+
+    <div class="trace-section" id="trace-section" style="display:none">
+      <div class="trace-header">
+        <span aria-hidden="true">↺</span>
+        <span id="trace-title">Autocorrection trace</span>
+      </div>
+      <div id="trace-items"></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>Schema: customers · products · orders · order_items</span>
+  <a href="/health" target="_blank" rel="noopener">API status</a>
+</footer>
+
+<script>
+  "use strict";
+
+  const form        = document.getElementById('ask-form');
+  const textarea    = document.getElementById('question');
+  const submitBtn   = document.getElementById('submit-btn');
+  const loadingEl   = document.getElementById('loading');
+  const errorBlock  = document.getElementById('error-block');
+  const resultEl    = document.getElementById('result');
+  const statusDot   = document.getElementById('status-dot');
+  const statusLabel = document.getElementById('status-label');
+  const statusMeta  = document.getElementById('status-meta');
+  const answerText  = document.getElementById('answer-text');
+  const metaRow     = document.getElementById('meta-row');
+  const answerBody  = document.getElementById('answer-body');
+  const sqlSection  = document.getElementById('sql-section');
+  const sqlCode     = document.getElementById('sql-code');
+  const traceSection = document.getElementById('trace-section');
+  const traceTitle  = document.getElementById('trace-title');
+  const traceItems  = document.getElementById('trace-items');
+
+  // Example chips
+  document.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      textarea.value = btn.dataset.q;
+      textarea.focus();
+    });
+  });
+
+  // Ctrl/Cmd+Enter to submit
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      submitForm();
+    }
+  });
+
+  form.addEventListener('submit', e => { e.preventDefault(); submitForm(); });
+
+  function submitForm() {
+    const q = textarea.value.trim();
+    if (q) runQuery(q);
+  }
+
+  // ── SQL syntax highlighting ──────────────────────────────────────────────
+
+  const SQL_KW = [
+    'SELECT','FROM','WHERE','LEFT JOIN','RIGHT JOIN','INNER JOIN','FULL JOIN',
+    'JOIN','ON','GROUP BY','ORDER BY','PARTITION BY','HAVING','LIMIT','OFFSET',
+    'WITH','AS','BY','AND','OR','NOT','IN','BETWEEN','LIKE','IS','NULL',
+    'COUNT','SUM','AVG','MAX','MIN','COALESCE','EXTRACT','DATE_TRUNC',
+    'CURRENT_DATE','CURRENT_TIMESTAMP','NOW','DISTINCT','CASE','WHEN','THEN',
+    'ELSE','END','OVER','LAG','LEAD','ROW_NUMBER','RANK','DENSE_RANK',
+    'CAST','TO_CHAR','YEAR','MONTH','DAY','NULLS','LAST','FIRST',
+    'ASC','DESC','UNION','ALL','EXCEPT','INTERSECT','EXISTS','TRUE','FALSE',
+    'INTEGER','BIGINT','NUMERIC','TEXT','VARCHAR','TIMESTAMP','TIMESTAMPTZ',
+    'INTERVAL','DATE',
+  ].sort((a, b) => b.length - a.length); // longest first to prevent partial overlaps
+
+  function escHtml(s) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function highlightSQL(sql) {
+    let out = escHtml(sql);
+
+    // String literals first (wrap before keyword pass touches their content)
+    out = out.replace(/'([^']*)'/g, m => `<span class="str">${m}</span>`);
+
+    // Keywords (skip content inside already-wrapped spans)
+    SQL_KW.forEach(kw => {
+      const esc = kw.replace(/ /g, '\\s+');
+      const re  = new RegExp(`(?<![\\w\\-])${esc}(?![\\w\\-])`, 'gi');
+      out = out.replace(re, m => {
+        // Don't re-highlight if already inside a span
+        return m;
+      });
+    });
+
+    // Second pass: replace keywords outside of <span> tags
+    out = out.replace(/(<span[^>]*>.*?<\/span>)|(\b(?:SELECT|FROM|WHERE|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|FULL\s+JOIN|JOIN|ON|GROUP\s+BY|ORDER\s+BY|PARTITION\s+BY|HAVING|LIMIT|OFFSET|WITH|AS|BY|AND|OR|NOT|IN|BETWEEN|LIKE|IS|NULL|COUNT|SUM|AVG|MAX|MIN|COALESCE|EXTRACT|DATE_TRUNC|CURRENT_DATE|CURRENT_TIMESTAMP|NOW|DISTINCT|CASE|WHEN|THEN|ELSE|END|OVER|LAG|LEAD|ROW_NUMBER|RANK|DENSE_RANK|CAST|TO_CHAR|YEAR|MONTH|DAY|NULLS|LAST|FIRST|ASC|DESC|UNION|ALL|EXCEPT|INTERSECT|EXISTS|TRUE|FALSE|INTEGER|BIGINT|NUMERIC|TEXT|VARCHAR|TIMESTAMP|TIMESTAMPTZ|INTERVAL|DATE)\b)/gi,
+      (match, span, kw) => {
+        if (span) return span;           // leave existing spans alone
+        if (kw)   return `<span class="kw">${kw.toUpperCase()}</span>`;
+        return match;
+      }
+    );
+
+    // Numbers (skip inside spans)
+    out = out.replace(/(<span[^>]*>.*?<\/span>)|(\b\d+(?:\.\d+)?\b)/g,
+      (match, span, num) => {
+        if (span) return span;
+        if (num)  return `<span class="num">${num}</span>`;
+        return match;
+      }
+    );
+
+    return out;
+  }
+
+  // ── Status bar ───────────────────────────────────────────────────────────
+
+  const STATUS = {
+    clean:    { dot: '#34d399', label: 'Answered' },
+    corrected:{ dot: '#fbbf24', label: null },   // label set dynamically
+    blocked:  { dot: '#f87171', label: 'Blocked — write operation rejected' },
+    offscope: { dot: '#6b7194', label: 'Out of scope' },
+  };
+
+  function setStatus(intent, cycles, latencyMs) {
+    const total = Object.values(latencyMs || {}).reduce((a, b) => a + b, 0);
+    const timeStr = total > 0 ? `${(total / 1000).toFixed(1)}s` : '';
+
+    let dot, label;
+    if (intent === 'answerable' && cycles === 0) {
+      dot   = STATUS.clean.dot;
+      label = STATUS.clean.label;
+    } else if (intent === 'answerable' && cycles > 0) {
+      dot   = STATUS.corrected.dot;
+      label = `Answered · ${cycles} correction${cycles > 1 ? 's' : ''} needed`;
+    } else if (intent === 'destructive') {
+      dot   = STATUS.blocked.dot;
+      label = STATUS.blocked.label;
+    } else {
+      dot   = STATUS.offscope.dot;
+      label = STATUS.offscope.label;
+    }
+
+    statusDot.style.background = dot;
+    statusLabel.textContent    = label;
+    statusMeta.textContent     = timeStr;
+
+    // Left accent on answer body
+    answerBody.style.borderLeftColor =
+      intent === 'answerable' && cycles > 0 ? 'var(--amber)' :
+      intent === 'answerable'               ? 'var(--green)' :
+      intent === 'destructive'              ? 'var(--red)'   : 'var(--border)';
+  }
+
+  // ── Trace ────────────────────────────────────────────────────────────────
+
+  function renderTrace(trace) {
+    if (!trace || trace.length === 0) {
+      traceSection.style.display = 'none';
+      return;
+    }
+    traceSection.style.display = 'block';
+    traceTitle.textContent = `Autocorrection trace · ${trace.length} correction cycle${trace.length > 1 ? 's' : ''}`;
+    traceItems.innerHTML = '';
+    trace.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'trace-item';
+      div.innerHTML = `
+        <div class="cycle-badge">↺ Cycle ${entry.cycle}</div>
+        <p class="trace-sublabel">SQL that failed</p>
+        <div class="trace-code"><code>${highlightSQL(entry.sql_attempted || '')}</code></div>
+        <p class="trace-sublabel">Database error</p>
+        <div class="error-callout">${escHtml(entry.db_error || '')}</div>
+        <p class="trace-sublabel">Diagnosis &amp; fix</p>
+        <div class="diagnosis-callout">${escHtml(entry.diagnosis || '')}</div>
+      `;
+      traceItems.appendChild(div);
+    });
+  }
+
+  // ── Main fetch ───────────────────────────────────────────────────────────
+
+  async function runQuery(question) {
+    errorBlock.classList.remove('visible');
+    resultEl.classList.remove('visible');
+    loadingEl.classList.add('visible');
+    submitBtn.disabled = true;
+
+    try {
+      const res = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+
+      if (res.status === 429) {
+        throw new Error('Rate limit reached — please wait a minute and try again.');
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = body.detail;
+        if (Array.isArray(detail)) {
+          throw new Error(detail.map(d => d.msg).join('; '));
+        }
+        throw new Error(detail || `Request failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      renderResult(data);
+    } catch (err) {
+      errorBlock.textContent = err.message;
+      errorBlock.classList.add('visible');
+    } finally {
+      loadingEl.classList.remove('visible');
+      submitBtn.disabled = false;
+    }
+  }
+
+  function stripMd(text) {
+    return (text || '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1');
+  }
+
+  function renderResult(data) {
+    answerText.textContent = stripMd(data.answer);
+
+    setStatus(data.intent, data.cycles || 0, data.latency_ms);
+
+    const model = 'claude-haiku-4-5';
+    metaRow.textContent = `model: ${model}`;
+
+    if (data.sql) {
+      sqlSection.style.display = 'block';
+      sqlCode.innerHTML = highlightSQL(data.sql);
+    } else {
+      sqlSection.style.display = 'none';
+    }
+
+    renderTrace(data.trace || []);
+
+    resultEl.classList.add('visible');
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+</script>
+
+</body>
+</html>
