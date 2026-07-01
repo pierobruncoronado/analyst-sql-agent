@@ -425,3 +425,44 @@ Added a single-page chat UI served at `GET /` so a stranger can open the Railway
 
 ### Not changed: Railway config
 - No `railway.json` or `railway.toml` exists. Railway uses default health check (HTTP 200 on `/`). HTML response is still 200 — no Railway dashboard changes needed.
+
+---
+
+## Phase 2 — Day 7: migration from Railway to Render
+
+### What
+Migrated the production deployment from Railway to Render (free tier, Docker web service).
+Added `render.yaml` (Render Blueprint IaC) to the repo root. README updated with the new
+Render URL. Railway service paused after Render deploy verified.
+
+### Why
+Railway free tier is shared across the portfolio (whatsapp-clinic-agent occupies a permanent
+slot — it cannot move to Render because Twilio's 15s webhook timeout is incompatible with
+Render's 30-60s cold start). The analyst does not face that constraint: its only client is a
+human via a browser, and the existing loading state (spinner + disabled submit button) already
+handles the cold start delay visibly. Moving to Render frees the Railway slot and consolidates
+the two deployable non-webhook projects (analyst + gateway) on the same platform.
+
+### Trade-offs accepted
+- **Cold start (30-60s after 15 min idle):** acceptable for a portfolio demo accessed by humans.
+  The UI spinner was already in place before this migration (added in the frontend phase) —
+  no code change needed.
+- **Single-instance, in-memory rate limiter:** slowapi runs in one process; Render free tier
+  runs one instance. No behavior change from Railway.
+- **No persistent disk:** the agent is stateless (no local files written at runtime) — no impact.
+
+### Env vars replicated to Render (names only)
+- `DATABASE_URL_RO` — Supabase Session Pooler, port 5432, IPv4. Same value as Railway.
+  `DATABASE_URL` (admin) is NOT set in Render (same policy as Railway: admin creds only for
+  local migration scripts, never in the runtime container).
+- `ANTHROPIC_API_KEY`
+
+### Health check
+`render.yaml` sets `healthCheckPath: /health`. Render polls this endpoint; a non-200 response
+marks the deploy as failed. The `GET /health` endpoint was already present from the frontend
+phase (returned `{"status": "ok", "model": "claude-haiku-4-5"}`).
+
+### Verification (post-deploy, Render URL)
+- `GET /health` → `{"status": "ok", "model": "claude-haiku-4-5"}` ✓
+- Root URL → UI loads, example chips visible ✓
+- `POST /ask {"question": "How many orders were placed in May 2026?"}` → answer contains "852" ✓

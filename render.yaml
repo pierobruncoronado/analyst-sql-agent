@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: analyst-sql-agent
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL_RO
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
