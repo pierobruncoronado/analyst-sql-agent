@@ -203,8 +203,42 @@ Goal: README final, CASE_STUDY.md, reproducibility verified — "terminado-contr
 - [x] Rejects destructive + out-of-schema (Day 3)
 - [x] No inventa números (Day 3)
 - [x] Suite de evals corrida: 7/7, baseline documentado, costo medido (Day 5)
-- [x] Deployed in cloud, answers with laptop off (Day 4)
-- [x] README reproducible — clone → run verified end-to-end in clean clone (Day 6) ← NEW
+- [x] Deployed in cloud, answers with laptop off (Day 4 en Railway → Day 7 migrado a Render)
+- [x] README reproducible — clone → run verified end-to-end in clean clone (Day 6)
 
 ### Project status: TERMINADO-CONTRATABLE
 All spec §8 acceptance criteria met. Evidence set complete.
+
+---
+
+## Phase 2 — Day 7: migration from Railway to Render
+
+**Motivo:** Railway free tier comparte cuota entre los 4 repos del portfolio. `whatsapp-clinic-agent`
+ocupa un slot permanente (no puede ir a Render: cold start 30-60s > timeout de Twilio 15s). El
+analyst no tiene esa restricción: su único cliente es un humano vía browser con spinner visible.
+`semantic-llm-gateway` también se mueve a Render en la misma sesión.
+
+### Done — Day 7
+
+1. [x] **`render.yaml`** creado y pusheado a `main`:
+       Docker web service · plan free · `healthCheckPath: /health` · 2 env var slots.
+2. [x] **Render CLI instalado** (`render.exe v2.21.0`, `%LOCALAPPDATA%\render-cli`) y autenticado
+       con la cuenta del owner.
+3. [x] **Render service creado vía CLI:**
+       nombre `analyst-sql-agent` · ID `srv-d92b5oernols738tf770` ·
+       URL `https://analyst-sql-agent.onrender.com` · región oregon · rama main.
+4. [x] **`docs/DECISIONS.md`** — entrada Day 7 agregada (decisión, trade-offs, pendientes).
+5. [x] **Railway identificado:** proyecto `beneficial-benevolence` / servicio `analyst-sql-agent`
+       (confirmado vía `railway list --json`). Listo para pausar en cuanto Render esté verificado.
+       `happy-perfection` / `whatsapp-clinic-agent` NO se toca.
+
+### Pending — Day 7 (próxima sesión)
+
+- [ ] Confirmar env vars aplicadas y deploy exitoso en Render
+- [ ] Verificar los 3 endpoints contra `https://analyst-sql-agent.onrender.com`:
+  - `GET /health` → `{"status": "ok", "model": "claude-haiku-4-5"}`
+  - `GET /` → UI carga con spinner funcional
+  - `POST /ask {"question": "How many orders were placed in May 2026?"}` → "852"
+- [ ] Actualizar README: reemplazar URL de Railway con `https://analyst-sql-agent.onrender.com`
+- [ ] Pausar Railway `beneficial-benevolence` / `analyst-sql-agent`
+- [ ] Commit + push cierre de hito

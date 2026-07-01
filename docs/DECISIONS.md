@@ -431,9 +431,15 @@ Added a single-page chat UI served at `GET /` so a stranger can open the Railway
 ## Phase 2 — Day 7: migration from Railway to Render
 
 ### What
-Migrated the production deployment from Railway to Render (free tier, Docker web service).
-Added `render.yaml` (Render Blueprint IaC) to the repo root. README updated with the new
-Render URL. Railway service paused after Render deploy verified.
+Added `render.yaml` (Render Blueprint IaC: Docker web service, free plan,
+`healthCheckPath: /health`, two env var slots). Render service created via CLI.
+
+**Render service:** `analyst-sql-agent` · ID `srv-d92b5oernols738tf770` ·
+URL `https://analyst-sql-agent.onrender.com` · region oregon.
+
+**State at end of session:** service created, env vars pending confirmation, build
+triggered but will fail until env vars are set. README update and Railway pause
+are the next two steps — held until Render verification passes.
 
 ### Why
 Railway free tier is shared across the portfolio (whatsapp-clinic-agent occupies a permanent
@@ -451,18 +457,22 @@ the two deployable non-webhook projects (analyst + gateway) on the same platform
   runs one instance. No behavior change from Railway.
 - **No persistent disk:** the agent is stateless (no local files written at runtime) — no impact.
 
-### Env vars replicated to Render (names only)
+### Env vars for Render (names only)
 - `DATABASE_URL_RO` — Supabase Session Pooler, port 5432, IPv4. Same value as Railway.
-  `DATABASE_URL` (admin) is NOT set in Render (same policy as Railway: admin creds only for
-  local migration scripts, never in the runtime container).
+  `DATABASE_URL` (admin) must NOT be set in Render (same policy as Railway: `config.py` raises
+  at startup if admin URL is present but RO URL is missing — explicit fail-closed guard).
 - `ANTHROPIC_API_KEY`
 
 ### Health check
-`render.yaml` sets `healthCheckPath: /health`. Render polls this endpoint; a non-200 response
-marks the deploy as failed. The `GET /health` endpoint was already present from the frontend
-phase (returned `{"status": "ok", "model": "claude-haiku-4-5"}`).
+`render.yaml` sets `healthCheckPath: /health`. Render polls this after every deploy; a non-200
+marks the deploy as failed. The endpoint was already present from the frontend phase.
 
-### Verification (post-deploy, Render URL)
-- `GET /health` → `{"status": "ok", "model": "claude-haiku-4-5"}` ✓
-- Root URL → UI loads, example chips visible ✓
-- `POST /ask {"question": "How many orders were placed in May 2026?"}` → answer contains "852" ✓
+### Pending (next session)
+- [ ] Confirm env vars applied and deploy passes health check on Render
+- [ ] Run 3-point verification against `https://analyst-sql-agent.onrender.com`:
+  - `GET /health` → `{"status": "ok", "model": "claude-haiku-4-5"}`
+  - Root URL → UI loads
+  - `POST /ask {"question": "How many orders were placed in May 2026?"}` → answer contains "852"
+- [ ] Update README with Render URL (replace Railway URL)
+- [ ] Pause Railway service `beneficial-benevolence` / `analyst-sql-agent` (ID confirmed via
+  `railway list --json`; `whatsapp-clinic-agent` in `happy-perfection` must NOT be touched)
