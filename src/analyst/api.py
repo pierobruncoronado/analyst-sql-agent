@@ -73,7 +73,7 @@ def index(request: Request):
     return HTMLResponse(content=request.app.state.ui_html)
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     """JSON health check for programmatic probes and Railway health polling."""
     return {"status": "ok", "model": "claude-haiku-4-5"}
