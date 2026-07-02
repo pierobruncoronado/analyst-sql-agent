@@ -5,7 +5,8 @@ Analyst translates natural language into read-only SQL over a fixed sales schema
 and explains the result. The core is a **LangGraph self-correction loop** that reads the
 database error when SQL fails, diagnoses it with an LLM, and retries — up to 3 cycles.
 
-> **Live:** `https://analyst-sql-agent-production.up.railway.app` · rate-limited 10 req/min per IP
+> **Live:** `https://analyst-sql-agent.onrender.com` · rate-limited 10 req/min per IP
+> (free tier — cold start after 15 min idle, first request can take 30-60s)
 
 ---
 
@@ -13,12 +14,12 @@ database error when SQL fails, diagnoses it with an LLM, and retries — up to 3
 
 ```bash
 # Happy path — answerable question
-curl -X POST https://analyst-sql-agent-production.up.railway.app/ask \
+curl -X POST https://analyst-sql-agent.onrender.com/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "What are the top 3 products by total revenue?"}'
 
 # Security layer — destructive query rejected before any SQL runs
-curl -X POST https://analyst-sql-agent-production.up.railway.app/ask \
+curl -X POST https://analyst-sql-agent.onrender.com/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "Drop the orders table and delete all customer data"}'
 ```
@@ -40,11 +41,13 @@ Both return HTTP 200. The `intent` field carries the semantic: `answerable` | `o
 | Unit tests | 11 deterministic tests · 2.35 s · no API/DB calls |
 | Rate limit | 10 req / min per IP |
 
-**Why 101 ms for the DB query:** Railway compute and Supabase are both in `us-west-1`.
-A previous project placed compute in US East against a São Paulo database — 3.5 s of
-cross-region overhead per query. This project avoids that by design; the co-location
-decision was made on Day 1, before any code was written. Measured result: 73% total
-latency reduction (7.8 s local → 2.1 s production), DB query 15× faster (1 550 ms → 101 ms).
+**Why 101 ms for the DB query:** measured while deployed on Railway, with compute and
+Supabase both in `us-west-1`. A previous project placed compute in US East against a
+São Paulo database — 3.5 s of cross-region overhead per query. This project avoids that
+by design; the co-location decision was made on Day 1, before any code was written.
+Measured result: 73% total latency reduction (7.8 s local → 2.1 s production), DB query
+15× faster (1 550 ms → 101 ms). The current deploy is on Render (Oregon) — not the exact
+region measured here — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for the migration note.
 
 ---
 
@@ -187,7 +190,7 @@ Python · [uv](https://docs.astral.sh/uv/) · [LangGraph](https://github.com/lan
 [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) (Haiku 4.5) ·
 Postgres on [Supabase](https://supabase.com) · psycopg3 ·
 [FastAPI](https://fastapi.tiangolo.com) · [slowapi](https://github.com/laurents/slowapi) ·
-[Railway](https://railway.app) (deploy, us-west-1)
+[Render](https://render.com) (deploy, Oregon)
 
 ---
 
