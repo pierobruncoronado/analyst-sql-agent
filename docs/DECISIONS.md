@@ -476,3 +476,10 @@ marks the deploy as failed. The endpoint was already present from the frontend p
 - [ ] Update README with Render URL (replace Railway URL)
 - [ ] Pause Railway service `beneficial-benevolence` / `analyst-sql-agent` (ID confirmed via
   `railway list --json`; `whatsapp-clinic-agent` in `happy-perfection` must NOT be touched)
+
+### Gotcha: health check returned 405 to uptime monitors
+`/health` only accepted `GET`. UptimeRobot's free tier locks its HTTP monitors to `HEAD`
+requests, so every check returned 405 and the monitor flagged the service as down even though
+it was healthy. Fix: expose `/health` via `@app.api_route("/health", methods=["GET", "HEAD"])`
+instead of `@app.get` (commit `d8238f9`). Same bug and same fix in `semantic-llm-gateway`
+(commit `9d87872`).

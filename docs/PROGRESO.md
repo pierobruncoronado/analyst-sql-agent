@@ -107,7 +107,8 @@ Goal: agent deployed and running 24/7 in Railway, callable over HTTP.
        cache, non-root `appuser`, shell-form CMD for `${PORT:-8000}` expansion.
 4. [x] `.dockerignore`: excludes `.env`, `.venv`, `.git`, `db/`, `docs/`, `tests/`, `evals/`.
 5. [x] Railway deploy: service Online in US West region (co-located with Supabase us-west-1).
-       Public URL: `https://analyst-sql-agent-production.up.railway.app`
+       Public URL: `https://analyst-sql-agent-production.up.railway.app` (migrated to Render on Day 7:
+       `https://analyst-sql-agent.onrender.com`, free tier — cold start ~30–50s after idle)
 6. [x] Live verification (local uvicorn OFF):
        - `POST /ask "How many orders in May 2026?"` → 200, intent=answerable, "856 orders", 2.1s total
          (classify 653 / gen 801 / exec **101ms** / synth 568 ms) — co-location confirmed: exec was

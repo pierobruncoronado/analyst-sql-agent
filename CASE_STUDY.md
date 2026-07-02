@@ -1,6 +1,6 @@
 # Case Study — Analyst: Conversational SQL Agent
 
-> **Live:** `https://analyst-sql-agent-production.up.railway.app`
+> **Live:** `https://analyst-sql-agent.onrender.com` (Render free tier — first request after idle may take ~30–50s cold start)
 
 ---
 
